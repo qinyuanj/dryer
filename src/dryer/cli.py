@@ -238,11 +238,17 @@ def select_files(options: Options) -> list[Path]:
     return sorted({path.resolve() for path in files}, key=lambda path: path.as_posix())
 
 
+UNSUPPORTED_PLATFORM = (
+    "dryer does not support native Windows. Run it inside WSL2 with the "
+    "project under ~/; see the README."
+)
+
+
 def platform_warning(platform: str, root: Path) -> str | None:
-    """Windows runs dryer inside WSL2, with the project in the Linux filesystem."""
+    """Refuse native Windows; suggest the Linux filesystem under WSL2."""
 
     if platform == "win32":
-        return "Native Windows is not supported. Run dryer inside WSL2; see the README."
+        return UNSUPPORTED_PLATFORM
     if root.as_posix().startswith("/mnt/"):
         return (
             f"{root} is on a Windows drive. Under WSL2, clone the project under ~/ "
@@ -265,6 +271,8 @@ def run(argv: list[str] | None = None) -> int:
     warning = platform_warning(sys.platform, root)
     if warning:
         print(warning, file=sys.stderr)
+    if sys.platform == "win32":
+        return 1
     files = select_files(options)
     if not files:
         print("No source files to analyze.")
