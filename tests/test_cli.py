@@ -276,6 +276,14 @@ def test_source_root_limits_the_walk(tmp_path):
     assert files == ["src/a.py"]
 
 
+def test_installed_tooling_is_not_project_source(tmp_path):
+    write_source(tmp_path, "src/a.py", "x = 1\n")
+    write_source(tmp_path, ".uml-viewer/dryer/src/b.py", "x = 1\n")
+    options = parse_args(["--root", str(tmp_path)])
+    files = [path.relative_to(tmp_path).as_posix() for path in select_files(options)]
+    assert files == ["src/a.py"]
+
+
 def test_git_status_asks_for_text_without_checking(tmp_path, monkeypatch):
     seen = {}
 
