@@ -164,6 +164,10 @@ def _text(node) -> str:
     return node_text(_DATA, node)
 
 
+def _named_symbol(node):
+    return [K("symbol"), _text(node)]
+
+
 def _normalize(node, head: bool = False):
     if node.type in _SKIP:
         return None
@@ -171,26 +175,27 @@ def _normalize(node, head: bool = False):
         return [K("symbol"), node.type]
     if not node.is_named:
         return None
+    return _normalize_named(node, head)
+
+
+def _normalize_named(node, head: bool):
     if node.type in _IDENTIFIERS:
-        if head:
-            return [K("symbol"), _text(node)]
-        return K("symbol")
+        return _named_symbol(node) if head else K("symbol")
     if _is_literal(node):
         return K("literal")
-    if node.type == "parenthesized_expression":
-        named = node.named_children
-        if len(named) == 1:
-            return _normalize(named[0], head)
+    if _single_parenthesized(node):
+        return _normalize(node.named_children[0], head)
     if node.type in _CALLS:
         return _normalize_call(node)
     if node.type in _ATTRIBUTES:
         return _normalize_attr(node, head)
-    children = []
-    for child in node.children:
-        norm = _normalize(child, False)
-        if norm is not None:
-            children.append(norm)
-    return [K(node.type), *children]
+    out = [K(node.type)]
+    _extend_normalized(out, node.children)
+    return out
+
+
+def _single_parenthesized(node) -> bool:
+    return node.type == "parenthesized_expression" and len(node.named_children) == 1
 
 
 def _is_literal(node) -> bool:
@@ -218,7 +223,7 @@ def _without_type_args(nodes):
 
 def _extend_normalized(out, nodes) -> None:
     for node in nodes:
-        norm = _normalize(node, False)
+        norm = _normalize(node)
         if norm is not None:
             out.append(norm)
 
@@ -237,12 +242,16 @@ def _normalize_call(node):
     return out
 
 
+def _is_path(node) -> bool:
+    return node.type in _SCOPED or node.type == "generic_type"
+
+
 def _normalize_callee(node):
     if node.type in _IDENTIFIERS:
-        return [K("symbol"), _text(node)]
+        return _named_symbol(node)
     if node.type in _ATTRIBUTES:
         return _normalize_attr(node, True)
-    if node.type in _SCOPED or node.type == "generic_type":
+    if _is_path(node):
         return _normalize_path(node)
     return _normalize(node, True)
 
@@ -253,39 +262,24 @@ def _normalize_path(node):
     parts = [K(node.type)]
     for child in node.named_children:
         if child.type in _IDENTIFIERS:
-            parts.append([K("symbol"), _text(child)])
-        elif child.type in _SCOPED or child.type == "generic_type":
+            parts.append(_named_symbol(child))
+        elif _is_path(child):
             parts.append(_normalize_path(child))
         else:
-            norm = _normalize(child, False)
-            if norm is not None:
-                parts.append(norm)
+            _extend_normalized(parts, [child])
     return parts
 
 
-def _normalized_name(name, head: bool):
+def _normalize_attr(node, head: bool):
     """Keep a member's spelling when it is the thing being called."""
 
-    if name.type in _IDENTIFIERS:
-        if head:
-            return [K("symbol"), _text(name)]
-        return K("symbol")
-    if head:
-        return _normalize_callee(name)
-    return _normalize(name, False)
-
-
-def _normalize_attr(node, head: bool):
     named = list(node.named_children)
     if not named:
         return [K(node.type)]
     *objects, name = named
     parts = [K(node.type)]
-    for obj in objects:
-        norm = _normalize(obj, False)
-        if norm is not None:
-            parts.append(norm)
-    nested = _normalized_name(name, head)
+    _extend_normalized(parts, objects)
+    nested = _normalize_callee(name) if head else _normalize(name)
     if nested is not None:
         parts.append(nested)
     return parts

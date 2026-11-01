@@ -107,22 +107,34 @@ def _python_nodes(data: bytes, root) -> list:
     return found
 
 
+def _ts_declared(node):
+    if _has(node, "statement_block") and not _inside(node, _TS_FUNCTION):
+        return node
+    return None
+
+
+def _ts_assigned(node):
+    parent = node.parent
+    if parent.type not in _DEFINITION_PARENTS or _inside(parent, _TS_FUNCTION):
+        return None
+    return parent
+
+
+_TS_PICKS = {
+    "function_declaration": _ts_declared,
+    "method_definition": _ts_declared,
+    "arrow_function": _ts_assigned,
+    "function_expression": _ts_assigned,
+}
+
+
 def _typescript_nodes(data: bytes, root) -> list:
     found = []
     for node in descendants(root):
-        if node.type == "function_declaration":
-            if _has(node, "statement_block") and not _inside(node, _TS_FUNCTION):
-                found.append(node)
-        elif node.type == "method_definition":
-            if _has(node, "statement_block") and not _inside(node, _TS_FUNCTION):
-                found.append(node)
-        elif node.type in {"arrow_function", "function_expression"}:
-            parent = node.parent
-            if parent is None or parent.type not in _DEFINITION_PARENTS:
-                continue
-            if _inside(parent, _TS_FUNCTION):
-                continue
-            found.append(parent)
+        pick = _TS_PICKS.get(node.type)
+        picked = pick(node) if pick is not None else None
+        if picked is not None:
+            found.append(picked)
     return found
 
 
@@ -144,9 +156,7 @@ _LUA_FUNCTION = {"function_declaration", "function_definition"}
 
 def _lua_assigned(node) -> bool:
     values = node.parent
-    if values is None or values.type != "expression_list":
-        return False
-    return values.parent is not None and values.parent.type == "assignment_statement"
+    return values.type == "expression_list" and values.parent.type == "assignment_statement"
 
 
 def _lua_nodes(data: bytes, root) -> list:

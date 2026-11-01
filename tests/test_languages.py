@@ -4,6 +4,7 @@ from dryer.astnorm import normalize
 from dryer.extract import entries_in_source
 from dryer.model import Entry
 from dryer.scan import _keep, find_duplicates, scan_files
+from dryer.shape import pr
 from dryer.treesitter import descendants, end_line, parse
 
 
@@ -390,6 +391,14 @@ def test_a_parenthesized_callee_matches_the_bare_call():
     assert found[0].score == 1.0
 
 
+def test_only_parentheses_are_unwrapped():
+    data, tree = parse("def alpha(xs):\n    return (len)(xs)\n", "python")
+    assert pr(normalize(tree.root_node.children[0], data, "python")) == (
+        "[:function_definition :symbol [:parameters :symbol] "
+        '[:block [:return_statement [:call [:symbol "len"] [:argument_list :symbol]]]]]'
+    )
+
+
 def test_a_string_and_a_number_normalize_to_the_same_literal():
     string = forms("python", 'def alpha(xs):\n    return "xs"\n', "a.py")
     number = forms("python", "def beta(items):\n    return 1\n", "b.py")
@@ -654,6 +663,15 @@ table.sort({}, function(a, b) return a end)
 local t = { f = function() end }
 """
     assert _lua_starts(source) == [1, 6]
+
+
+def test_a_returned_lua_function_is_not_an_entry():
+    source = """\
+local M = {}
+for k, v in pairs(M) do end
+return function(x) return x end
+"""
+    assert _lua_starts(source) == []
 
 
 def test_lua_operators_count_only_in_lua():

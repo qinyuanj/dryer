@@ -178,38 +178,70 @@ class Reader:
             items.append(inner)
         return Coll("list", line, items=items)
 
+    def read_prefixed(self) -> Coll:
+        line = self.line
+        return self._wrap(_PREFIXES[self.get()], line)
+
+    def read_unquote(self) -> Coll:
+        line = self.line
+        self.get()
+        name = "unquote"
+        if self.peek() == "@":
+            self.get()
+            name = "unquote-splicing"
+        return self._wrap(name, line)
+
+    def read_meta(self):
+        self.get()
+        self.read_form()
+        return self.read_form()
+
+    def read_atom(self):
+        line = self.line
+        token = self.read_token()
+        if _NUMBER.match(token):
+            return Lit(line)
+        return Sym(token, line)
+
     def read_dispatch(self):
         line = self.line
         self.get()
         ch = self.peek()
         if ch is None:
             raise ReadError(line, "incomplete dispatch")
-        if ch == "_":
+        return _DISPATCH.get(ch, Reader.read_tagged)(self, line)
+
+    def read_discard(self, line: int) -> None:
+        self.get()
+        self.read_form()
+
+    def read_set(self, line: int) -> Coll:
+        return self.read_collection("}", "set")
+
+    def read_fn(self, line: int) -> Coll:
+        inner = self.read_collection(")", "list")
+        return Coll("list", line, items=[Sym("fn*", line), *inner.items])
+
+    def read_regex(self, line: int) -> Lit:
+        self.read_string()
+        return Lit(line)
+
+    def read_conditional(self, line: int):
+        self.get()
+        splicing = self.peek() == "@"
+        if splicing:
             self.get()
-            self.read_form()
-            return None
-        if ch == "{":
-            return self.read_collection("}", "set")
-        if ch == "(":
-            inner = self.read_collection(")", "list")
-            return Coll("list", line, items=[Sym("fn*", line), *inner.items])
-        if ch == '"':
-            self.read_string()
-            return Lit(line)
-        if ch == "?":
+        return self.read_cond(splicing)
+
+    def read_namespaced_map(self, line: int):
+        self.get()
+        if self.peek() == ":":
             self.get()
-            splicing = False
-            if self.peek() == "@":
-                self.get()
-                splicing = True
-            return self.read_cond(splicing)
-        if ch == ":":
-            self.get()
-            if self.peek() == ":":
-                self.get()
-            elif self.peek() not in (None, "{") and self.peek() not in _WHITESPACE:
-                self.read_token()
-            return self.read_form()
+        elif self.peek() not in (None, "{") and self.peek() not in _WHITESPACE:
+            self.read_token()
+        return self.read_form()
+
+    def read_tagged(self, line: int) -> Lit:
         self.read_token()
         self.read_form()
         return Lit(line)
@@ -233,45 +265,32 @@ class Reader:
         if self.eof():
             raise ReadError(self.line, "unexpected end of file")
         ch = self.peek()
-        line = self.line
-        if ch == "(":
-            return self.read_collection(")", "list")
-        if ch == "[":
-            return self.read_collection("]", "vector")
-        if ch == "{":
-            return self.read_collection("}", "map")
-        if ch == '"':
-            return self.read_string()
-        if ch == "\\":
-            return self.read_char()
-        if ch == ":":
-            return self.read_keyword()
-        if ch == "'":
-            self.get()
-            return self._wrap("quote", line)
-        if ch == "@":
-            self.get()
-            return self._wrap("deref", line)
-        if ch == "`":
-            self.get()
-            return self._wrap("syntax-quote", line)
-        if ch == "~":
-            self.get()
-            name = "unquote"
-            if self.peek() == "@":
-                self.get()
-                name = "unquote-splicing"
-            return self._wrap(name, line)
-        if ch == "^":
-            self.get()
-            self.read_form()
-            return self.read_form()
-        if ch == "#":
-            return self.read_dispatch()
-        token = self.read_token()
-        if _NUMBER.match(token):
-            return Lit(line)
-        return Sym(token, line)
+        if ch in _COLLECTIONS:
+            return self.read_collection(*_COLLECTIONS[ch])
+        return _READERS.get(ch, Reader.read_atom)(self)
+
+
+_COLLECTIONS = {"(": (")", "list"), "[": ("]", "vector"), "{": ("}", "map")}
+_PREFIXES = {"'": "quote", "@": "deref", "`": "syntax-quote"}
+_READERS = {
+    '"': Reader.read_string,
+    "\\": Reader.read_char,
+    ":": Reader.read_keyword,
+    "'": Reader.read_prefixed,
+    "@": Reader.read_prefixed,
+    "`": Reader.read_prefixed,
+    "~": Reader.read_unquote,
+    "^": Reader.read_meta,
+    "#": Reader.read_dispatch,
+}
+_DISPATCH = {
+    "_": Reader.read_discard,
+    "{": Reader.read_set,
+    "(": Reader.read_fn,
+    '"': Reader.read_regex,
+    "?": Reader.read_conditional,
+    ":": Reader.read_namespaced_map,
+}
 
 
 def _branch_name(feature):
@@ -340,10 +359,9 @@ def _children(form):
 
 
 def max_line(form) -> int:
-    best = getattr(form, "line", 1) or 1
+    best = form.line
     for child in _children(form):
-        if child is not None:
-            best = max(best, max_line(child))
+        best = max(best, max_line(child))
     return best
 
 
@@ -351,7 +369,7 @@ def _normalize_list(form):
     if not form.items:
         return [K("list"), K("literal")]
     head_form, *args = form.items
-    return [K("list"), normalize(head_form, True), *[normalize(arg, False) for arg in args]]
+    return [K("list"), normalize(head_form, True), *[normalize(arg) for arg in args]]
 
 
 def normalize(form, head: bool = False):
@@ -361,11 +379,11 @@ def normalize(form, head: bool = False):
         if form.kind == "list":
             return _normalize_list(form)
         if form.kind == "vector":
-            return [K("vector"), *[normalize(item, False) for item in form.items]]
+            return [K("vector"), *[normalize(item) for item in form.items]]
         if form.kind == "set":
-            return [K("set"), *[normalize(item, False) for item in form.items]]
+            return [K("set"), *[normalize(item) for item in form.items]]
         if form.kind == "map":
-            pairs = [[normalize(key, False), normalize(value, False)] for key, value in form.pairs]
+            pairs = [[normalize(key), normalize(value)] for key, value in form.pairs]
             return [K("map"), *pairs]
         return [K("literal")]
     if isinstance(form, Sym):

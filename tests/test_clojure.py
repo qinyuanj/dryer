@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from dryer.clojure_read import Coll, Sym, is_candidate_form, normalize, read_source
+from dryer.clojure_read import Coll, Sym, is_candidate_form, max_line, normalize, read_source
 from dryer.model import Duplicate, Span
 from dryer.report import format_text, render_edn
 from dryer.scan import find_duplicates, scan_files
@@ -347,3 +347,48 @@ def test_node_count_and_keyword_printing():
     assert repr(K("symbol")) == ":symbol"
     assert node_count(K("symbol")) == 1
     assert node_count([K("list"), K("symbol"), K("literal")]) == 4
+
+
+def test_function_literal_reads_as_an_fn_list():
+    forms, warning = read_source("(map #(inc %)\n  xs)\n")
+    assert warning is None
+    literal = forms[0].items[1]
+    assert literal.kind == "list"
+    assert literal.line == 1
+    assert [item.name for item in literal.items] == ["fn*", "inc", "%"]
+    assert pr(normalize(literal)) == '[:list [:symbol "fn*"] :symbol :symbol]'
+
+
+def test_regex_and_tagged_literals_are_literals():
+    forms, warning = read_source('(re-find #"a\\"+" s)\n(f #inst "2020" #js {:a 1} y)\n')
+    assert warning is None
+    assert [type(item).__name__ for item in forms[0].items] == ["Sym", "Lit", "Sym"]
+    assert [type(item).__name__ for item in forms[1].items] == ["Sym", "Lit", "Lit", "Sym"]
+    assert forms[1].items[1].line == 2
+    _, warning = read_source('(re-find #"a+ s)\n')
+    assert warning == "1: unterminated string"
+
+
+def test_reader_errors_name_the_line():
+    for tail, expected in [
+        ("#", "2: incomplete dispatch"),
+        ("'", "2: unexpected end of file"),
+        (")", "2: expected a symbol"),
+        ("{:a}", "2: map literal has an odd number of forms"),
+    ]:
+        forms, warning = read_source(f"(inc x)\n{tail}")
+        assert warning == expected, tail
+        assert [form.items[0].name for form in forms] == ["inc"]
+
+
+def test_an_auto_resolved_keyword_keeps_its_name():
+    forms, warning = read_source("::alpha\n")
+    assert warning is None
+    assert forms[0].name == "alpha"
+
+
+def test_max_line_is_the_last_line_of_any_child():
+    forms, warning = read_source("(defn alpha [x]\n  {:a\n   (inc x)})\n")
+    assert warning is None
+    assert max_line(forms[0]) == 3
+    assert max_line(forms[0].items[1]) == 1
