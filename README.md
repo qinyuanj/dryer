@@ -47,29 +47,42 @@ What stays is the call or method name, the operator, and the shape of the tree. 
 ./dryer
 ```
 
-The first run creates `.venv` and installs the tool. From a project root it walks the tree, skips `test`, `spec`, `vendor`, `node_modules`, and `target`, and writes two results:
+The first run creates `.venv` and installs the tool. crapper has to be checked out next to this directory (`../crapper`), because file selection and function names come from it. From a project root the tool walks the tree, skips `test`, `spec`, `vendor`, `node_modules`, and `target`, and writes two results:
 
 - a report on stdout, closest match first
 - `.metrics/dry.edn`, replaced on every successful analysis
 
 ```bash
 ./dryer src/demo src/ui          # these files and trees
-./dryer --changed                # git additions and edits
+./dryer --changed                # git additions, edits, and untracked files
+./dryer --exclude 'src/**/gen'   # leave a path or glob out
 ./dryer billing                  # path fragment
 ./dryer --threshold 0.9 src
 ./dryer --edn --min-lines 3 src
 ```
 
 ```text
---threshold N    Minimum structural similarity score, default 0.82
---min-lines N    Minimum source lines in a candidate form, default 4
---min-nodes N    Minimum normalized syntax nodes, default 20
---format F       text or edn, default text
---edn            Same as --format edn
---text           Same as --format text
+-s, --source-root R  Walk this tree instead of the project root; repeatable
+--exclude G          Leave out a path or glob under the project root; repeatable
+--threshold N        Minimum structural similarity score, default 0.82
+--min-lines N        Minimum source lines in a candidate form, default 4
+--min-nodes N        Minimum normalized syntax nodes, default 20
+--format F           text or edn, default text
+--edn                Same as --format edn
+--text               Same as --format text
 ```
 
 Normalized syntax nodes are the structural pieces left after incidental names and literals are replaced. `--min-nodes` drops forms smaller than that before comparison.
+
+dryer picks files exactly as crapper and mutator do for the same arguments, so the three reports cover the same code. The one addition is `.cljd`, which dry4clj reads: it is Clojure here, and `_test.cljd` is a test.
+
+To keep the three reports on the same code, give all three the same `-s` and `--exclude` instead of a list of files. A file you name is compared even when it is a test or sits in a directory the walk skips, such as `build` or `testdata`, so a hand-built file list can add rows that join nothing in `.metrics/crap.edn`.
+
+`--changed` takes the files git reports as added, modified, renamed, or untracked under the project root, including files inside a new untracked directory. Deleted files are left out, and `--root` may be a subdirectory of the repository.
+
+`-s`/`--source-root` (repeatable, relative to the project root) walks those trees instead of the project root. Combined with `--changed` or with path arguments, it narrows that selection instead: only files under at least one source root are kept, compared after resolving symlinks. A file you name that is outside every root is dropped with `Skipping <path>; it is outside the source roots` on stderr; files found by `--changed` or by walking a named directory are dropped silently. So `./dryer -s src src/a.py` compares only `src/a.py`. Text filters and `--exclude` apply afterwards, as they do to every selection. These are crapper's and mutator's rules.
+
+`--exclude` uses the same rules as crapper and uml-viewer. A pattern is a path relative to the project root, with either separator. `*` and `?` match within one directory name, and `**` matches any number of whole directories, including none. A matched directory excludes everything under it. Matching is case-sensitive, and a leading `./` or trailing `/` is ignored. An absolute pattern or one containing `..` is a usage error. Exclusions apply to every way of picking files. A file you name that is excluded is skipped with `Skipping excluded <path>` on stderr.
 
 Default text output for the invoice and receipt from dry4clj. They differ by one extra binding:
 
@@ -105,7 +118,7 @@ DUPLICATE score=0.89
 
 Clojure reader conditionals keep the `:clj` branch, as dry4clj does. Syntax-quote is kept as a `syntax-quote` form rather than expanded.
 
-A missing or unreadable Clojure form is reported on stderr. Forms read before it are still compared. The run exits `0` after a report, `1` on a usage error, and `2` on an unknown `--format`.
+A missing or unreadable Clojure form is reported on stderr. Forms read before it are still compared. The run exits `0` after a report, `1` on a usage error (including a bad `--exclude` or a missing crapper checkout), and `2` on an unknown `--format`.
 
 ## WSL2
 
@@ -118,7 +131,8 @@ section. Run it inside WSL2 with Ubuntu.
 
    ```bash
    cd ~
-   git clone -b lua https://github.com/TLOBillyQ/dryer.git
+   git clone https://github.com/TLOBillyQ/crapper.git
+   git clone https://github.com/TLOBillyQ/dryer.git
    ```
 
 3. Run `dryer/scripts/setup-ubuntu.sh`. It installs Python, Lua 5.4,
@@ -134,3 +148,5 @@ python3 -m venv .venv
 .venv/bin/pip install -e '.[dev]'
 .venv/bin/pytest
 ```
+
+The tests import crapper from `../crapper`, the same as a run.

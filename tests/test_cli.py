@@ -2,8 +2,11 @@ from pathlib import Path
 
 import pytest
 
-from dryer.cli import _changed_files, _count, _tracked_source, main, parse_args, run, select_files
-from dryer.discover import is_test_file, iter_source_files, language_of
+import subprocess
+
+from dryer.cli import HELP, _count, main, parse_args, run, select_files
+from dryer.crapper_link import ensure_crapper
+from dryer.discover import is_source_file, is_test_file, iter_source_files, language_of
 
 
 def write_source(root: Path, name: str, text: str) -> None:
@@ -90,6 +93,14 @@ def test_edn_stdout(tmp_path, capsys):
     assert out == "{:candidates []}\n"
 
 
+def test_a_missing_root_is_created_for_the_snapshot(tmp_path, capsys):
+    write_source(tmp_path, "src/one.py", "def alpha(xs):\n    return xs\n")
+    root = tmp_path / "fresh" / "project"
+    assert run(["--root", str(root), str(tmp_path / "src" / "one.py")]) == 0
+    assert capsys.readouterr().out == "No duplicate candidates found.\n"
+    assert (root / ".metrics" / "dry.edn").read_text(encoding="utf-8") == "{:candidates []}\n"
+
+
 def test_empty_project(tmp_path, capsys):
     assert run(["--root", str(tmp_path)]) == 0
     assert capsys.readouterr().out == "No source files to analyze.\n"
@@ -164,62 +175,6 @@ def test_names_that_are_tests():
     assert not is_test_file("src/app.py")
 
 
-class _Git:
-    def __init__(self, returncode, stdout, stderr=""):
-        self.returncode = returncode
-        self.stdout = stdout
-        self.stderr = stderr
-
-
-def test_changed_files_reads_porcelain(tmp_path, monkeypatch):
-    stdout = ' M src/a.py\nR  old.py -> src/b.py\n?? "src/c d.py"\n\nX\n'
-    monkeypatch.setattr(
-        "dryer.cli.subprocess.run",
-        lambda *args, **kwargs: _Git(0, stdout),
-    )
-    assert _changed_files(tmp_path) == [
-        (tmp_path / "src/a.py").resolve(),
-        (tmp_path / "src/b.py").resolve(),
-        (tmp_path / "src/c d.py").resolve(),
-    ]
-
-
-def test_changed_files_reports_git_failure(tmp_path, monkeypatch, capsys):
-    monkeypatch.setattr(
-        "dryer.cli.subprocess.run",
-        lambda *args, **kwargs: _Git(1, "", "fatal: not a git repository\n"),
-    )
-    assert _changed_files(tmp_path) == []
-    assert capsys.readouterr().err == "fatal: not a git repository\n"
-
-    monkeypatch.setattr(
-        "dryer.cli.subprocess.run",
-        lambda *args, **kwargs: _Git(1, "", "  \n"),
-    )
-    assert _changed_files(tmp_path) == []
-    assert capsys.readouterr().err == "git status failed\n"
-
-
-def test_changed_limits_the_report(tmp_path, monkeypatch, capsys):
-    body = "def alpha(xs):\n    ys = filter(xs, odd)\n    zs = map(ys, inc)\n    return list(zs)\n"
-    other = "def beta(items):\n    kept = filter(items, even)\n    out = map(kept, dec)\n    return list(out)\n"
-    write_source(tmp_path, "src/a.py", body)
-    write_source(tmp_path, "src/b.py", other)
-    write_source(tmp_path, "src/c.py", body)
-    write_source(tmp_path, "tests/test_a.py", other)
-    stdout = " M src/a.py\n M src/b.py\n M tests/test_a.py\n ?? README.md\n"
-    monkeypatch.setattr(
-        "dryer.cli.subprocess.run",
-        lambda *args, **kwargs: _Git(0, stdout),
-    )
-    assert run(["--root", str(tmp_path), "--changed", "--min-lines", "3", "--min-nodes", "1"]) == 0
-    out = capsys.readouterr().out
-    assert "src/a.py" in out
-    assert "src/b.py" in out
-    assert "src/c.py" not in out
-    assert "test_a.py" not in out
-
-
 def test_an_option_without_a_value_is_a_usage_error(capsys):
     assert run(["--threshold"]) == 1
     assert "--threshold requires a value" in capsys.readouterr().err
@@ -284,37 +239,6 @@ def test_installed_tooling_is_not_project_source(tmp_path):
     assert files == ["src/a.py"]
 
 
-def test_git_status_asks_for_text_without_checking(tmp_path, monkeypatch):
-    seen = {}
-
-    def fake_run(args, **kwargs):
-        seen["args"] = args
-        seen["kwargs"] = kwargs
-        return _Git(0, " M src/a.py\n")
-
-    monkeypatch.setattr("dryer.cli.subprocess.run", fake_run)
-    assert _changed_files(tmp_path) == [(tmp_path / "src/a.py").resolve()]
-    assert seen["args"] == ["git", "status", "--porcelain"]
-    assert seen["kwargs"]["check"] is False
-    assert seen["kwargs"]["capture_output"] is True
-    assert seen["kwargs"]["text"] is True
-    assert seen["kwargs"]["cwd"] == tmp_path
-
-
-def test_a_status_line_of_four_characters_is_a_path(tmp_path, monkeypatch):
-    monkeypatch.setattr(
-        "dryer.cli.subprocess.run",
-        lambda *args, **kwargs: _Git(0, " M a\n"),
-    )
-    assert _changed_files(tmp_path) == [(tmp_path / "a").resolve()]
-
-
-def test_changed_source_skips_unknown_and_test_files(tmp_path):
-    assert _tracked_source(tmp_path / "README.md") is False
-    assert _tracked_source(tmp_path / "tests" / "test_a.py") is False
-    assert _tracked_source(tmp_path / "src" / "a.py") is True
-
-
 def test_test_files_and_skipped_directories_are_left_out(tmp_path):
     write_source(tmp_path, "src/app.py", "x = 1\n")
     write_source(tmp_path, "src/foo_test.py", "x = 1\n")
@@ -344,3 +268,206 @@ def test_lua_fixture_reports_the_copied_function(tmp_path, monkeypatch):
     assert ':language "lua"' in snapshot
     assert ':left {:file "src/calc/init.lua", :start-line 14, :end-line 20}' in snapshot
     assert ':right {:file "src/calc/stats.lua", :start-line 5, :end-line 11}' in snapshot
+
+
+ALPHA = "def alpha(xs):\n    ys = filter(xs, odd)\n    zs = map(ys, inc)\n    return list(zs)\n"
+BETA = "def beta(items):\n    kept = filter(items, even)\n    out = map(kept, dec)\n    return list(out)\n"
+SMALL = ["--min-lines", "3", "--min-nodes", "1"]
+
+
+def git(root: Path, *args: str) -> None:
+    subprocess.run(["git", *args], cwd=root, check=True, capture_output=True)
+
+
+def git_repo(root: Path) -> None:
+    git(root, "init", "-q")
+    git(root, "config", "user.email", "dryer@example.com")
+    git(root, "config", "user.name", "dryer")
+
+
+def test_run_reports_a_missing_crapper_as_a_usage_error(monkeypatch, capsys):
+    def missing():
+        raise ImportError("crapper not found")
+
+    monkeypatch.setattr("dryer.cli.ensure_crapper", missing)
+    assert run(["src"]) == 1
+    assert capsys.readouterr().err == "crapper not found\n"
+
+
+def test_help_works_without_crapper(monkeypatch, capsys):
+    def missing():
+        raise ImportError("crapper not found")
+
+    monkeypatch.setattr("dryer.cli.ensure_crapper", missing)
+    assert run(["--help"]) == 0
+    assert capsys.readouterr().out == HELP
+
+
+def test_selection_follows_crapper_and_adds_cljd(tmp_path, monkeypatch):
+    crapper = ensure_crapper()
+    monkeypatch.setattr(crapper.discover, "SKIP_DIRS", crapper.discover.SKIP_DIRS | {"gen"})
+    for name in ["src/a.py", "src/b.cljd", "src/b_test.cljd", "src/c.clj", "gen/d.py", "spec/e.lua", "src/f_spec.lua"]:
+        write_source(tmp_path, name, "x = 1\n")
+    ours = iter_source_files([tmp_path])
+    theirs = crapper.discover.iter_source_files([tmp_path])
+    assert [path for path in ours if path.suffix != ".cljd"] == theirs
+    assert [path.relative_to(tmp_path).as_posix() for path in ours] == ["src/a.py", "src/b.cljd", "src/c.clj"]
+
+
+def test_a_named_file_is_walked_as_is(tmp_path):
+    write_source(tmp_path, "notes.md", "x\n")
+    assert iter_source_files([tmp_path / "notes.md"]) == [(tmp_path / "notes.md").resolve()]
+    assert iter_source_files([tmp_path / "missing"]) == []
+
+
+def test_cljd_is_clojure_source_and_its_tests_are_tests():
+    assert is_source_file(Path("src/app/core.cljd"))
+    assert not is_source_file(Path("src/app/core_test.cljd"))
+    assert not is_source_file(Path("README.md"))
+    assert not is_source_file(Path("src/app_spec.lua"))
+    assert is_test_file("src/app_spec.lua")
+    assert not is_test_file("src/app.cljd")
+
+
+def test_changed_finds_new_directories_under_a_subdirectory_root(tmp_path, capsys):
+    git_repo(tmp_path)
+    write_source(tmp_path, "sub/old.py", "x = 1\n")
+    write_source(tmp_path, "sub/gone.py", "x = 1\n")
+    git(tmp_path, "add", ".")
+    git(tmp_path, "commit", "-qm", "base")
+    (tmp_path / "sub/gone.py").unlink()
+    write_source(tmp_path, "sub/fresh/a b.py", ALPHA)
+    write_source(tmp_path, "sub/fresh/b.cljd", "(ns b)\n")
+    write_source(tmp_path, "sub/fresh/c.py", BETA)
+    write_source(tmp_path, "sub/fresh/test_c.py", BETA)
+    write_source(tmp_path, "other/d.py", ALPHA)
+    options = parse_args(["--root", str(tmp_path / "sub"), "--changed"])
+    files = [path.relative_to(tmp_path).as_posix() for path in select_files(options)]
+    assert files == ["sub/fresh/a b.py", "sub/fresh/b.cljd", "sub/fresh/c.py"]
+    assert run(["--root", str(tmp_path / "sub"), "--changed", *SMALL]) == 0
+    assert "fresh/a b.py:1-4\n  fresh/c.py:1-4" in capsys.readouterr().out
+
+
+def test_changed_reports_git_failure(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("LC_ALL", "C")
+    assert run(["--root", str(tmp_path), "--changed"]) == 0
+    captured = capsys.readouterr()
+    assert "not a git repository" in captured.err
+    assert captured.out == "No source files to analyze.\n"
+
+
+def test_exclude_filters_the_walk_and_source_roots(tmp_path):
+    for name in ["src/a.py", "src/gen/b.py", "src/deep/gen/c.py", "lib/d.py", "lib/e.py"]:
+        write_source(tmp_path, name, "x = 1\n")
+
+    def chosen(*args):
+        options = parse_args(["--root", str(tmp_path), *args])
+        return [path.relative_to(tmp_path).as_posix() for path in select_files(options)]
+
+    assert chosen("--exclude", "src/**/gen", "--exclude", "./lib/e.py") == ["lib/d.py", "src/a.py"]
+    assert chosen("-s", "src", "--exclude", "src/gen/") == ["src/a.py", "src/deep/gen/c.py"]
+    assert chosen("src", "--exclude", "src/*/gen") == ["src/a.py", "src/gen/b.py"]
+    assert chosen("--exclude", "SRC") == ["lib/d.py", "lib/e.py", "src/a.py", "src/deep/gen/c.py", "src/gen/b.py"]
+
+
+def test_exclude_filters_changed_files(tmp_path):
+    git_repo(tmp_path)
+    write_source(tmp_path, "src/a.py", "x = 1\n")
+    write_source(tmp_path, "src/gen/b.py", "x = 1\n")
+    options = parse_args(["--root", str(tmp_path), "--changed", "--exclude", "src\\gen"])
+    assert [path.relative_to(tmp_path).as_posix() for path in select_files(options)] == ["src/a.py"]
+
+
+def test_an_excluded_file_named_explicitly_is_skipped(tmp_path, capsys):
+    write_source(tmp_path, "src/gen/a.py", ALPHA)
+    write_source(tmp_path, "src/b.py", BETA)
+    args = ["--root", str(tmp_path), "--exclude", "src/gen", "src/gen/a.py", "src/b.py"]
+    options = parse_args(args)
+    assert [path.relative_to(tmp_path).as_posix() for path in select_files(options)] == ["src/b.py"]
+    assert capsys.readouterr().err == "Skipping excluded src/gen/a.py\n"
+
+
+def test_an_exclusion_outside_the_project_is_a_usage_error(tmp_path, capsys):
+    for pattern in ["/abs", "src/../x"]:
+        assert run(["--root", str(tmp_path), "--exclude", pattern]) == 1
+        message = f"--exclude must be a path or glob inside the project root: {pattern}\n\n{HELP}"
+        assert capsys.readouterr().err == message
+    assert not (tmp_path / ".metrics").exists()
+
+
+def test_exclude_needs_a_value(capsys):
+    assert run(["--exclude"]) == 1
+    assert "--exclude requires a value" in capsys.readouterr().err
+
+
+def test_exclude_is_in_the_help():
+    assert "--exclude <glob>" in HELP
+
+
+def test_source_roots_and_exclusions_select_what_crapper_selects(tmp_path):
+    ensure_crapper()
+    import crapper.cli
+    names = ["core.py", "build/helper.py", "testdata/fx.py", "test_dup.py", "gen/g.py"]
+    for name in names:
+        write_source(tmp_path, f"src/demo/{name}", "x = 1\n")
+    scope = ["--root", str(tmp_path), "-s", "src", "--exclude", "src/demo/gen"]
+    ours = select_files(parse_args(scope))
+    assert ours == crapper.cli.select_files(crapper.cli.parse_args(scope))
+    assert [path.relative_to(tmp_path).as_posix() for path in ours] == ["src/demo/core.py"]
+    listed = select_files(parse_args(["--root", str(tmp_path), *(f"src/demo/{name}" for name in names[:4])]))
+    assert len(listed) == 4
+
+
+def _scope_tree(root: Path) -> None:
+    for name in ("src/a.py", "src/x/c.py", "lib/b.py"):
+        write_source(root, name, "x = 1\n")
+
+
+def _chosen(root: Path, *args: str) -> list[str]:
+    files = select_files(parse_args(["--root", str(root), *args]))
+    return [path.relative_to(root.resolve()).as_posix() for path in files]
+
+
+def test_source_roots_narrow_changed_files(tmp_path, capsys):
+    git_repo(tmp_path)
+    _scope_tree(tmp_path)
+    assert _chosen(tmp_path, "-s", "src", "--changed") == ["src/a.py", "src/x/c.py"]
+    assert _chosen(tmp_path, "--changed", "-s", "src/x", "-s", "lib") == ["lib/b.py", "src/x/c.py"]
+    assert capsys.readouterr().err == ""
+
+
+def test_a_named_file_outside_the_source_roots_is_skipped_with_a_message(tmp_path, capsys):
+    _scope_tree(tmp_path)
+    outside = tmp_path.parent / f"{tmp_path.name}-elsewhere.py"
+    outside.write_text("x = 1\n", encoding="utf-8")
+    assert _chosen(tmp_path, "-s", "src", "lib/b.py", str(outside)) == []
+    assert capsys.readouterr().err == (
+        "Skipping lib/b.py; it is outside the source roots\n"
+        f"Skipping {outside.resolve().as_posix()}; it is outside the source roots\n"
+    )
+
+
+def test_a_named_directory_keeps_only_files_under_the_source_roots(tmp_path, capsys):
+    _scope_tree(tmp_path)
+    assert _chosen(tmp_path, "-s", "src", ".") == ["src/a.py", "src/x/c.py"]
+    assert _chosen(tmp_path, "-s", "src/x", "-s", "lib", "src") == ["src/x/c.py"]
+    assert capsys.readouterr().err == ""
+
+
+def test_a_named_file_inside_a_source_root_is_all_that_is_chosen(tmp_path, capsys):
+    _scope_tree(tmp_path)
+    assert _chosen(tmp_path, "-s", "src", "src/a.py") == ["src/a.py"]
+    assert _chosen(tmp_path, "-s", "src/a.py", "src") == ["src/a.py"]
+    assert capsys.readouterr().err == ""
+
+
+def test_source_roots_alone_still_walk_the_roots_then_filter_and_exclude(tmp_path):
+    _scope_tree(tmp_path)
+    assert _chosen(tmp_path, "-s", "src") == ["src/a.py", "src/x/c.py"]
+    assert _chosen(tmp_path, "-s", "src", "c.py") == ["src/x/c.py"]
+    assert _chosen(tmp_path, "-s", "src", "--exclude", "src/x") == ["src/a.py"]
+    assert _chosen(tmp_path, "-s", "src", "src", "--exclude", "src/x") == ["src/a.py"]
+
+
+def test_help_says_source_roots_narrow_paths_and_changed():
+    assert "outside the source roots" in HELP

@@ -1,113 +1,45 @@
-"""Find source files and decide which language each one is written in.
+"""Pick source files the way crapper and mutator do.
 
-The extensions and the skipped directories match crapper and mutator, with
-`.cljd` added because dry4clj reads it.
+The one difference is `.cljd`: dry4clj reads it, so it is Clojure here and
+`_test.cljd` is a test.
 """
 
 import os
 from pathlib import Path
 
-EXTENSIONS = {
-    ".clj": "clojure",
-    ".cljc": "clojure",
-    ".cljs": "clojure",
-    ".cljd": "clojure",
-    ".bb": "clojure",
-    ".java": "java",
-    ".go": "go",
-    ".ts": "typescript",
-    ".tsx": "typescript",
-    ".mts": "typescript",
-    ".cts": "typescript",
-    ".rs": "rust",
-    ".py": "python",
-    ".lua": "lua",
-}
+from dryer.crapper_link import ensure_crapper
 
-SKIP_DIRS = {
-    ".git",
-    ".hg",
-    ".svn",
-    ".idea",
-    ".venv",
-    "venv",
-    "node_modules",
-    "vendor",
-    "target",
-    "dist",
-    "build",
-    "out",
-    "coverage",
-    ".metrics",
-    ".uml-viewer",
-    "testdata",
-    "__pycache__",
-    ".clj-kondo",
-    "lua_modules",
-    ".luarocks",
-}
 
-TEST_DIRS = {"test", "tests", "spec", "specs", "__tests__"}
+def _crapper():
+    return ensure_crapper().discover
 
 
 def language_of(path: str | Path) -> str | None:
-    file_path = Path(path)
-    name = file_path.name
-    if name.endswith(".d.ts"):
-        return None
-    return EXTENSIONS.get(file_path.suffix)
+    if Path(path).suffix == ".cljd":
+        return "clojure"
+    return _crapper().language_of(path)
 
 
 def is_test_file(path: str | Path) -> bool:
-    file_path = Path(path)
-    name = file_path.name
-    if name.endswith("_test.go"):
-        return True
-    if name.endswith(("_test.clj", "_test.cljc", "_test.cljs", "_test.cljd", "_test.bb")):
-        return True
-    if name.endswith(
-        (
-            ".test.ts",
-            ".spec.ts",
-            ".test.tsx",
-            ".spec.tsx",
-            ".test.mts",
-            ".spec.mts",
-        )
-    ):
-        return True
-    if name.endswith("_spec.lua"):
-        return True
-    if name == "conftest.py":
-        return True
-    if name.endswith("_test.py") or (name.startswith("test_") and name.endswith(".py")):
-        return True
-    return any(part in TEST_DIRS for part in file_path.parts)
+    return Path(path).name.endswith("_test.cljd") or _crapper().is_test_file(path)
 
 
-def _skipped_dir(name: str) -> bool:
-    return name in SKIP_DIRS or name in TEST_DIRS
+def is_source_file(path: Path) -> bool:
+    return language_of(path) is not None and not is_test_file(path)
 
 
 def _walk(root: Path) -> list[Path]:
-    if not root.exists():
-        return []
     if root.is_file():
         return [root]
+    skipped = _crapper().SKIP_DIRS | _crapper().TEST_DIRS
     found: list[Path] = []
     for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [name for name in dirnames if not _skipped_dir(name)]
-        for name in filenames:
-            path = Path(dirpath) / name
-            if language_of(path) is None or is_test_file(path):
-                continue
-            found.append(path)
+        dirnames[:] = [name for name in dirnames if name not in skipped]
+        paths = (Path(dirpath) / name for name in filenames)
+        found.extend(path for path in paths if is_source_file(path))
     return found
 
 
 def iter_source_files(roots: list[Path]) -> list[Path]:
-    files: set[Path] = set()
-    for root in roots:
-        for path in _walk(root):
-            files.add(path.resolve())
+    files = {path.resolve() for root in roots for path in _walk(root)}
     return sorted(files, key=lambda path: path.as_posix())

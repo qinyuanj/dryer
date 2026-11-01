@@ -3,6 +3,11 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+if [ ! -d ../crapper ]; then
+  echo "dryer imports ../crapper; clone it next to this repo first." >&2
+  exit 1
+fi
+
 sudo apt-get update
 sudo apt-get install -y python3 python3-venv build-essential \
   lua5.4 liblua5.4-dev luarocks
