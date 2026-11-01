@@ -266,8 +266,8 @@ def test_lua_fixture_reports_the_copied_function(tmp_path, monkeypatch):
     run([])
     snapshot = (project / ".metrics" / "dry.edn").read_text(encoding="utf-8")
     assert ':language "lua"' in snapshot
-    assert ':left {:file "src/calc/init.lua", :start-line 14, :end-line 20}' in snapshot
-    assert ':right {:file "src/calc/stats.lua", :start-line 5, :end-line 11}' in snapshot
+    assert ':left {:file "src/calc/init.lua", :start-line 14, :end-line 20, :namespace "calc", :name "M.total"}' in snapshot
+    assert ':right {:file "src/calc/stats.lua", :start-line 5, :end-line 11, :namespace "calc.stats", :name "M.sum_clamped"}' in snapshot
 
 
 ALPHA = "def alpha(xs):\n    ys = filter(xs, odd)\n    zs = map(ys, inc)\n    return list(zs)\n"

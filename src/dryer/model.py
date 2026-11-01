@@ -3,11 +3,13 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class Span:
-    """Where one candidate form sits in a source file."""
+    """Where one candidate form sits, and the crapper function it belongs to."""
 
     file: str
     start_line: int
     end_line: int
+    namespace: str | None = None
+    name: str | None = None
 
 
 @dataclass(frozen=True)
@@ -32,3 +34,5 @@ class Entry:
     end_line: int
     nodes: int
     fingerprints: frozenset[str]
+    namespace: str | None = None
+    name: str | None = None

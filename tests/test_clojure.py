@@ -38,8 +38,8 @@ def test_edn_report_matches_the_text_fields():
         "{:candidates [\n"
         " {:score 0.875\n"
         '  :language "clojure"\n'
-        '  :left {:file "a.clj", :start-line 10, :end-line 14}\n'
-        '  :right {:file "b.clj", :start-line 20, :end-line 24}\n'
+        '  :left {:file "a.clj", :start-line 10, :end-line 14, :namespace nil, :name nil}\n'
+        '  :right {:file "b.clj", :start-line 20, :end-line 24, :namespace nil, :name nil}\n'
         "  :left-nodes 30\n"
         "  :right-nodes 31}\n"
         "]}\n"

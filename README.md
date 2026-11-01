@@ -92,17 +92,19 @@ DUPLICATE score=0.89
   src/billing/receipt.clj:3-14
 ```
 
-`.metrics/dry.edn` is the same report dry4clj prints as EDN, with the language added:
+`.metrics/dry.edn` is the same report dry4clj prints as EDN, with the language added. Each side also carries crapper's `:namespace` and `:name` for that function, so a candidate joins the `.metrics/crap.edn` and `.metrics/mutate` rows uml-viewer already joins on namespace and function name:
 
 ```clojure
 {:candidates
  [{:score 0.890909090909
    :language "clojure"
-   :left {:file "src/billing/invoice.clj", :start-line 3, :end-line 13}
-   :right {:file "src/billing/receipt.clj", :start-line 3, :end-line 14}
+   :left {:file "src/billing/invoice.clj", :start-line 3, :end-line 13, :namespace "billing.invoice", :name "invoice-summary"}
+   :right {:file "src/billing/receipt.clj", :start-line 3, :end-line 14, :namespace "billing.receipt", :name "receipt-summary"}
    :left-nodes 158
    :right-nodes 166}]}
 ```
+
+The file is replaced in one step, so a reader never sees a partial report.
 
 ## What each language compares
 
@@ -115,6 +117,8 @@ DUPLICATE score=0.89
 | Rust | functions and methods with a body | functions inside `mod tests`, and closures |
 | Python | functions and methods | functions nested inside another function |
 | Lua | `function` declarations and function expressions assigned to a name | nested functions, and closures that are never assigned |
+
+`:namespace` and `:name` come from the crapper function that starts on the candidate's first line. Failing that, they come from the smallest crapper function whose lines contain the candidate. When there is none, both are `nil`. A Clojure `def`, a macro call, or any other top-level form that is not a `defn` gets `nil`, because crapper scores only `defn` and `defn-`.
 
 Clojure reader conditionals keep the `:clj` branch, as dry4clj does. Syntax-quote is kept as a `syntax-quote` form rather than expanded.
 

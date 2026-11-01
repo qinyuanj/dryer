@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import tempfile
 from pathlib import Path
 
 from dryer.model import Duplicate
@@ -34,10 +36,15 @@ def _edn_float(value: float) -> str:
     return text
 
 
+def _edn_name(value: str | None) -> str:
+    return "nil" if value is None else _edn_string(value)
+
+
 def _span_edn(span) -> str:
     return (
         f"{{:file {_edn_string(span.file)}, "
-        f":start-line {span.start_line}, :end-line {span.end_line}}}"
+        f":start-line {span.start_line}, :end-line {span.end_line}, "
+        f":namespace {_edn_name(span.namespace)}, :name {_edn_name(span.name)}}}"
     )
 
 
@@ -55,7 +62,8 @@ def _candidate_edn(candidate: Duplicate) -> str:
 
 
 def render_edn(candidates: list[Duplicate]) -> str:
-    """EDN map `{:candidates [...]}` with dry4clj's keys, plus `:language`."""
+    """EDN map `{:candidates [...]}` with dry4clj's keys, plus `:language`
+    and each side's crapper `:namespace` and `:name`."""
 
     if not candidates:
         return "{:candidates []}\n"
@@ -67,8 +75,22 @@ def metrics_path(root: Path) -> Path:
     return root / ".metrics" / "dry.edn"
 
 
+def _replace(path: Path, text: str) -> None:
+    """Write beside `path`, then swap it in, so a reader never sees half a report."""
+
+    handle, temp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+    try:
+        with os.fdopen(handle, "w", encoding="utf-8") as stream:
+            stream.write(text)
+        os.chmod(temp, 0o644)
+        os.replace(temp, path)
+    except BaseException:
+        os.unlink(temp)
+        raise
+
+
 def write_metrics(candidates: list[Duplicate], root: Path) -> Path:
     path = metrics_path(root)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(render_edn(candidates), encoding="utf-8")
+    _replace(path, render_edn(candidates))
     return path

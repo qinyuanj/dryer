@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from itertools import combinations
 from pathlib import Path
 
 from dryer.discover import language_of
 from dryer.extract import entries_in_source
 from dryer.model import Duplicate, Entry, Span
+from dryer.names import named
 from dryer.shape import jaccard
 
 
@@ -37,8 +39,13 @@ def scan_files(
         found, warning = entries_in_source(language, source, path.as_posix(), file)
         if warning:
             warnings.append(f"{file}:{warning}")
-        entries.extend(entry for entry in found if _keep(entry, min_lines, min_nodes))
+        kept = [entry for entry in found if _keep(entry, min_lines, min_nodes)]
+        entries.extend(named(kept, language, source, file, str(root.resolve())))
     return entries, warnings
+
+
+def _span(entry: Entry) -> Span:
+    return Span(entry.file, entry.start_line, entry.end_line, entry.namespace, entry.name)
 
 
 def _same_span(left: Entry, right: Entry) -> bool:
@@ -70,22 +77,21 @@ def find_duplicates(entries: list[Entry], threshold: float) -> list[Duplicate]:
 
     found: list[Duplicate] = []
     for language, group in by_language.items():
-        for index, left in enumerate(group):
-            for right in group[index + 1 :]:
-                if _same_span(left, right):
-                    continue
-                score = jaccard(left.fingerprints, right.fingerprints)
-                if score < threshold:
-                    continue
-                found.append(
-                    Duplicate(
-                        score=score,
-                        language=language,
-                        left=Span(left.file, left.start_line, left.end_line),
-                        right=Span(right.file, right.start_line, right.end_line),
-                        left_nodes=left.nodes,
-                        right_nodes=right.nodes,
-                    )
+        for left, right in combinations(group, 2):
+            if _same_span(left, right):
+                continue
+            score = jaccard(left.fingerprints, right.fingerprints)
+            if score < threshold:
+                continue
+            found.append(
+                Duplicate(
+                    score=score,
+                    language=language,
+                    left=_span(left),
+                    right=_span(right),
+                    left_nodes=left.nodes,
+                    right_nodes=right.nodes,
                 )
+            )
     found.sort(key=_duplicate_key)
     return found
