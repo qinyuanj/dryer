@@ -1,0 +1,7 @@
+# Snapshots and fixtures are compared byte for byte on Linux and Windows.
+# Check them out with LF whatever core.autocrlf says; tests make CRLF copies.
+tests/fixtures/** text eol=lf
+*.edn text eol=lf
+# POSIX entry scripts must keep LF to run under sh.
+dryer text eol=lf
+*.sh text eol=lf
