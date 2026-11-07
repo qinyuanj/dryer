@@ -270,6 +270,69 @@ def test_lua_fixture_reports_the_copied_function(tmp_path, monkeypatch):
     assert ':right {:file "src/calc/stats.lua", :start-line 5, :end-line 11, :namespace "calc.stats", :name "M.sum_clamped"}' in snapshot
 
 
+FIXTURES = Path(__file__).parent / "fixtures"
+LUA_GOLDEN = FIXTURES / "lua_project.dry.edn"
+
+
+def copy_fixture(name: str, target: Path, newline: bytes) -> Path:
+    """Copy a fixture project with every line ending rewritten to `newline`."""
+
+    source = FIXTURES / name
+    for path in source.rglob("*"):
+        if path.is_file():
+            copied = target / path.relative_to(source)
+            copied.parent.mkdir(parents=True, exist_ok=True)
+            copied.write_bytes(path.read_bytes().replace(b"\r\n", b"\n").replace(b"\n", newline))
+    return target
+
+
+@pytest.mark.parametrize("newline", [b"\n", b"\r\n"], ids=["lf", "crlf"])
+def test_lua_fixture_snapshot_is_the_golden_bytes(tmp_path, monkeypatch, newline):
+    project = copy_fixture("lua_project", tmp_path / "lua_project", newline)
+    monkeypatch.chdir(project)
+    assert run([]) == 0
+    assert (project / ".metrics" / "dry.edn").read_bytes() == LUA_GOLDEN.read_bytes()
+
+
+def test_edn_on_stdout_is_the_golden_bytes(tmp_path):
+    import os
+    import sys
+
+    project = copy_fixture("lua_project", tmp_path / "lua_project", b"\r\n")
+    src = Path(__file__).resolve().parents[1] / "src"
+    env = {**os.environ, "PYTHONPATH": str(src)}
+    result = subprocess.run(
+        [sys.executable, "-m", "dryer", "--edn"], cwd=project, env=env, capture_output=True, check=True
+    )
+    assert result.stdout == LUA_GOLDEN.read_bytes()
+
+
+CLOJURE_LEFT = "(ns a.core)\n\n(defn alpha [xs]\n  (let [ys (filter odd? xs)]\n    (map inc ys)\n    (reduce + ys)))\n"
+CLOJURE_RIGHT = "(ns b.core)\n\n(defn beta [items]\n  (let [kept (filter even? items)]\n    (map dec kept)\n    (reduce * kept)))\n"
+
+
+def test_crlf_sources_report_the_same_lines_and_names_as_lf(tmp_path):
+    snapshots = []
+    for newline in ("\n", "\r\n"):
+        root = tmp_path / ("crlf" if newline == "\r\n" else "lf")
+        for name, text in [
+            ("src/a/core.clj", CLOJURE_LEFT),
+            ("src/b/core.clj", CLOJURE_RIGHT),
+            ("src/left.py", "\n\n" + ALPHA),
+            ("src/right.py", BETA),
+        ]:
+            path = root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(text.replace("\n", newline).encode("utf-8"))
+        assert run(["--root", str(root), *SMALL]) == 0
+        snapshots.append((root / ".metrics" / "dry.edn").read_bytes())
+    lf, crlf = snapshots
+    assert crlf == lf
+    assert b':left {:file "src/a/core.clj", :start-line 3, :end-line 6, :namespace "a.core", :name "alpha"}' in lf
+    assert b':file "src/left.py", :start-line 3, :end-line 6' in lf
+    assert b"\r" not in lf
+
+
 ALPHA = "def alpha(xs):\n    ys = filter(xs, odd)\n    zs = map(ys, inc)\n    return list(zs)\n"
 BETA = "def beta(items):\n    kept = filter(items, even)\n    out = map(kept, dec)\n    return list(out)\n"
 SMALL = ["--min-lines", "3", "--min-nodes", "1"]
@@ -350,6 +413,8 @@ def test_changed_finds_new_directories_under_a_subdirectory_root(tmp_path, capsy
 
 def test_changed_reports_git_failure(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("LC_ALL", "C")
+    # The temp directory may sit inside a checkout; stop git from finding it.
+    monkeypatch.setenv("GIT_CEILING_DIRECTORIES", str(tmp_path.parent))
     assert run(["--root", str(tmp_path), "--changed"]) == 0
     captured = capsys.readouterr()
     assert "not a git repository" in captured.err
