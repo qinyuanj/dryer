@@ -124,10 +124,40 @@ Clojure reader conditionals keep the `:clj` branch, as dry4clj does. Syntax-quot
 
 A missing or unreadable Clojure form is reported on stderr. Forms read before it are still compared. The run exits `0` after a report, `1` on a usage error (including a bad `--exclude` or a missing crapper checkout), and `2` on an unknown `--format`.
 
+## Windows
+
+dryer runs natively on Windows 11 and on Windows 10 22H2 (build 19045) or
+later, in cmd or PowerShell. An older build exits with status 1 and names the
+minimum build.
+
+1. Install Python 3.11 or later from python.org and Git for Windows.
+2. Clone crapper and dryer side by side:
+
+   ```bat
+   git clone https://github.com/TLOBillyQ/crapper.git
+   git clone https://github.com/TLOBillyQ/dryer.git
+   ```
+
+3. Create the environment and run from a project root:
+
+   ```bat
+   py -m venv dryer\.venv
+   dryer\.venv\Scripts\python -m pip install -e dryer
+   dryer\.venv\Scripts\dryer
+   ```
+
+The first run downloads the tree-sitter grammars, as on Linux.
+
+`.metrics/dry.edn` is byte-identical to the one Linux writes for the same
+project: locations are `/` paths relative to the project root, files with CRLF
+line endings are read as if they had LF, so they report the same forms and
+line numbers, and the snapshot and `--edn` output are written with LF.
+`--exclude` takes `/` or `\`. If another program has the snapshot open,
+dryer retries the replace briefly, so readers still never see a partial file.
+
 ## WSL2
 
-Native Windows is not supported: dryer exits with status 1 and points at this
-section. Run it inside WSL2 with Ubuntu.
+dryer also runs inside WSL2 with Ubuntu.
 
 1. In an administrator PowerShell, run `wsl --install` and reboot.
 2. Open Ubuntu and clone into the Linux home directory, not `/mnt/c`.
@@ -152,5 +182,8 @@ python3 -m venv .venv
 .venv/bin/pip install -e '.[dev]'
 .venv/bin/pytest
 ```
+
+On Windows, use `.venv\Scripts\python -m pytest`. The same golden snapshot
+(`tests/fixtures/lua_project.dry.edn`) must pass on both hosts.
 
 The tests import crapper from `../crapper`, the same as a run.
