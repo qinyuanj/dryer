@@ -51,7 +51,9 @@ Options:
   --text                        Same as --format text.
 
 Arguments:
-  path              File or directory to compare. A file you name is compared
+  path              File or directory to compare within --root. Sources outside
+                    the project root are a usage error before publication.
+                    A file you name is compared
                     even when it is a test or sits in a skipped directory; to
                     match crapper and mutator, pass the same -s and --exclude
                     instead of a file list. With --source-root, a named file
@@ -269,7 +271,11 @@ def select_files(options: Options) -> list[Path]:
     existing, filters = _positionals(root, options.positionals)
     selected = _crapper().without_excluded(_selected(options, root, existing), root, options.excludes)
     files = _apply_filters(selected, filters)
-    return sorted({path.resolve() for path in files}, key=lambda path: path.as_posix())
+    resolved = {path.resolve() for path in files}
+    for path in resolved:
+        if not path.is_relative_to(root):
+            raise ValueError(f"Source {path.as_posix()} is outside the project root")
+    return sorted(resolved, key=lambda path: path.as_posix())
 
 
 def run(argv: list[str] | None = None) -> int:
@@ -290,7 +296,11 @@ def run(argv: list[str] | None = None) -> int:
     warning = platform_warning(sys.platform, root)
     if warning:
         print(warning, file=sys.stderr)
-    files = select_files(options)
+    try:
+        files = select_files(options)
+    except ValueError as error:
+        print(f"dryer: {error}", file=sys.stderr)
+        return 1
     if not files:
         print("No source files to analyze.")
         return 0

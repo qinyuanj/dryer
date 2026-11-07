@@ -52,6 +52,11 @@ The first run creates `.venv` and installs the tool. crapper has to be checked o
 - a report on stdout, closest match first
 - `.metrics/dry.edn`, replaced on every successful analysis
 
+Selected sources must resolve inside `--root`. An outside source selected by
+an explicit path, directory or source root is a usage error; dryer exits 1
+before scanning or replacing the snapshot. Report paths are POSIX paths
+relative to that root.
+
 ```bash
 ./dryer src/demo src/ui          # these files and trees
 ./dryer --changed                # git additions, edits, and untracked files

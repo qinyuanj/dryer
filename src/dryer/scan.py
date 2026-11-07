@@ -15,10 +15,7 @@ from dryer.shape import jaccard
 
 def display_path(path: Path, root: Path) -> str:
     resolved = path.resolve()
-    try:
-        return resolved.relative_to(root.resolve()).as_posix()
-    except ValueError:
-        return resolved.as_posix()
+    return resolved.relative_to(root.resolve()).as_posix()
 
 
 def _keep(entry: Entry, min_lines: int, min_nodes: int) -> bool:

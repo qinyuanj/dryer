@@ -93,12 +93,32 @@ def test_edn_stdout(tmp_path, capsys):
     assert out == "{:candidates []}\n"
 
 
-def test_a_missing_root_is_created_for_the_snapshot(tmp_path, capsys):
+def test_an_external_source_does_not_create_a_missing_project_root(tmp_path, capsys):
     write_source(tmp_path, "src/one.py", "def alpha(xs):\n    return xs\n")
     root = tmp_path / "fresh" / "project"
-    assert run(["--root", str(root), str(tmp_path / "src" / "one.py")]) == 0
-    assert capsys.readouterr().out == "No duplicate candidates found.\n"
-    assert (root / ".metrics" / "dry.edn").read_text(encoding="utf-8") == "{:candidates []}\n"
+    assert run(["--root", str(root), str(tmp_path / "src" / "one.py")]) == 1
+    assert "outside the project root" in capsys.readouterr().err
+    assert not root.exists()
+
+
+@pytest.mark.parametrize('selection', ['file', 'directory', 'source-root'])
+def test_outside_project_selection_is_rejected_without_replacing_snapshot(tmp_path, capsys, selection):
+    project = tmp_path / 'project'
+    project.mkdir()
+    external = tmp_path / 'external'
+    external.mkdir()
+    source = external / 'outside.py'
+    source.write_text('def value():\n    return 1\n', encoding='utf-8')
+    snapshot = project / '.metrics' / 'dry.edn'
+    snapshot.parent.mkdir()
+    snapshot.write_bytes(b'previous snapshot\n')
+    args = ['--root', str(project)]
+    args += ['-s', str(external)] if selection == 'source-root' else [str(source if selection == 'file' else external)]
+    assert run(args) == 1
+    output = capsys.readouterr()
+    assert 'outside the project root' in output.err
+    assert output.out == ''
+    assert snapshot.read_bytes() == b'previous snapshot\n'
 
 
 def test_empty_project(tmp_path, capsys):
