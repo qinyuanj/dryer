@@ -1,5 +1,6 @@
 import os
 import shutil
+import sys
 from pathlib import Path
 
 import pytest
@@ -120,6 +121,11 @@ def test_edn_sides_end_with_namespace_and_name():
     )
 
 
+# Windows has no group/other bits: chmod only sets or clears read-only, so a
+# writable file always reads back as 0o666 there.
+PUBLISHED_MODE = 0o666 if sys.platform == "win32" else 0o644
+
+
 def test_the_snapshot_is_replaced_in_one_step(tmp_path, monkeypatch):
     path = tmp_path / ".metrics" / "dry.edn"
     write_metrics([], tmp_path)
@@ -130,11 +136,11 @@ def test_the_snapshot_is_replaced_in_one_step(tmp_path, monkeypatch):
         seen.append((Path(source).parent, Path(source).read_text(encoding="utf-8"), Path(target)))
         real(source, target)
 
-    monkeypatch.setattr("dryer.report.os.replace", replace)
+    monkeypatch.setattr("dryer.platform.os.replace", replace)
     assert write_metrics([], tmp_path) == path
     assert seen == [(path.parent, "{:candidates []}\n", path)]
     assert os.listdir(path.parent) == ["dry.edn"]
-    assert oct(path.stat().st_mode & 0o777) == oct(0o644)
+    assert oct(path.stat().st_mode & 0o777) == oct(PUBLISHED_MODE)
 
 
 def test_a_failed_write_keeps_the_previous_snapshot(tmp_path, monkeypatch):
@@ -145,7 +151,7 @@ def test_a_failed_write_keeps_the_previous_snapshot(tmp_path, monkeypatch):
     def broken(source, target):
         raise OSError("disk full")
 
-    monkeypatch.setattr("dryer.report.os.replace", broken)
+    monkeypatch.setattr("dryer.platform.os.replace", broken)
     with pytest.raises(OSError, match="disk full"):
         write_metrics([], tmp_path)
     assert path.read_text(encoding="utf-8") == "previous\n"

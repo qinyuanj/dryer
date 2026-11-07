@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-import os
-import tempfile
 from pathlib import Path
 
 from dryer.model import Duplicate
+from dryer.platform import publish
 
 
 def format_text(candidates: list[Duplicate]) -> str:
@@ -75,22 +74,8 @@ def metrics_path(root: Path) -> Path:
     return root / ".metrics" / "dry.edn"
 
 
-def _replace(path: Path, text: str) -> None:
-    """Write beside `path`, then swap it in, so a reader never sees half a report."""
-
-    handle, temp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
-    try:
-        with os.fdopen(handle, "w", encoding="utf-8") as stream:
-            stream.write(text)
-        os.chmod(temp, 0o644)
-        os.replace(temp, path)
-    except BaseException:
-        os.unlink(temp)
-        raise
-
-
 def write_metrics(candidates: list[Duplicate], root: Path) -> Path:
     path = metrics_path(root)
     path.parent.mkdir(parents=True, exist_ok=True)
-    _replace(path, render_edn(candidates))
+    publish(path, render_edn(candidates))
     return path

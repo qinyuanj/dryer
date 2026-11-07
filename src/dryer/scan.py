@@ -9,6 +9,7 @@ from dryer.discover import language_of
 from dryer.extract import entries_in_source
 from dryer.model import Duplicate, Entry, Span
 from dryer.names import named
+from dryer.platform import read_source
 from dryer.shape import jaccard
 
 
@@ -34,7 +35,7 @@ def scan_files(
         language = language_of(path)
         if language is None:
             continue
-        source = path.read_text(encoding="utf-8", errors="replace")
+        source = read_source(path)
         file = display_path(path, root)
         found, warning = entries_in_source(language, source, path.as_posix(), file)
         if warning:

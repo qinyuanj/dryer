@@ -8,6 +8,7 @@ from pathlib import Path
 
 from dryer.crapper_link import ensure_crapper
 from dryer.discover import is_source_file, iter_source_files, language_of
+from dryer.platform import lf_stdout, platform_refusal, platform_warning, windows_build
 from dryer.report import format_text, render_edn, write_metrics
 from dryer.scan import find_duplicates, scan_files
 
@@ -271,25 +272,6 @@ def select_files(options: Options) -> list[Path]:
     return sorted({path.resolve() for path in files}, key=lambda path: path.as_posix())
 
 
-UNSUPPORTED_PLATFORM = (
-    "dryer does not support native Windows. Run it inside WSL2 with the "
-    "project under ~/; see the README."
-)
-
-
-def platform_warning(platform: str, root: Path) -> str | None:
-    """Refuse native Windows; suggest the Linux filesystem under WSL2."""
-
-    if platform == "win32":
-        return UNSUPPORTED_PLATFORM
-    if root.as_posix().startswith("/mnt/"):
-        return (
-            f"{root} is on a Windows drive. Under WSL2, clone the project under ~/ "
-            "for speed and working symlinks."
-        )
-    return None
-
-
 def run(argv: list[str] | None = None) -> int:
     options = parse_args(argv)
     if options.action == "help":
@@ -300,12 +282,14 @@ def run(argv: list[str] | None = None) -> int:
         print(options.message, file=sys.stderr, end="")
         return options.exit_code
 
+    refusal = platform_refusal(sys.platform, windows_build() if sys.platform == "win32" else None)
+    if refusal:
+        print(refusal, file=sys.stderr)
+        return 1
     root = options.project_root.resolve()
     warning = platform_warning(sys.platform, root)
     if warning:
         print(warning, file=sys.stderr)
-    if sys.platform == "win32":
-        return 1
     files = select_files(options)
     if not files:
         print("No source files to analyze.")
@@ -325,4 +309,5 @@ def run(argv: list[str] | None = None) -> int:
 
 
 def main(argv: list[str] | None = None) -> None:
+    lf_stdout()
     sys.exit(run(argv))
