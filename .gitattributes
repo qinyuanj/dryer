@@ -5,3 +5,5 @@ tests/fixtures/** text eol=lf
 # POSIX entry scripts must keep LF to run under sh.
 dryer text eol=lf
 *.sh text eol=lf
+# The pre-commit hook runs under sh, which rejects CR.
+.githooks/** text eol=lf

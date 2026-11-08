@@ -1,0 +1,28 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      # crapper_link imports crapper from the ../crapper sibling checkout.
+      - uses: actions/checkout@v4
+        with:
+          path: dryer
+      - uses: actions/checkout@v4
+        with:
+          repository: qinyuanj/crapper
+          path: crapper
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # Lua 5.4, Busted and LuaCov, so the Lua tests run instead of skipping.
+      - run: bash scripts/setup-ubuntu.sh
+        working-directory: dryer
+      - run: .venv/bin/python -m pytest -q -rs
+        working-directory: dryer
