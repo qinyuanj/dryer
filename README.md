@@ -2,6 +2,8 @@
 
 dryer finds candidate duplicate code in Clojure, Java, Go, TypeScript, Rust, Python, and Lua. One run detects the language of each source file, normalizes that language's forms, and reports pairs whose structure is close enough to review.
 
+> **DeepSeek Harness users:** the [dsh-uml-viewer](https://github.com/qinyuanj/dsh-uml-viewer) plugin carries a Rust port of dryer as its `uml-viewer dry` subcommand, so inside DSH you need nothing from this repository. Outside DSH, dryer still works on its own and the frozen [uml-viewer](https://github.com/qinyuanj/uml-viewer) `get-uml-viewer` flow still uses it. New features go to dsh-uml-viewer; this repository takes bug fixes only.
+
 Clojure follows [dry4clj](https://github.com/unclebob/dry4clj). The other languages use the same idea on the functions and methods [crapper](https://github.com/unclebob/crapper) and [mutator](https://github.com/unclebob/mutator) already treat as one unit. A form is only compared with forms written in the same language.
 
 The score is Jaccard similarity of structural fingerprints:
