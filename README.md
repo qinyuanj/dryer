@@ -135,9 +135,7 @@ A missing or unreadable Clojure form is reported on stderr. Forms read before it
 
 dryer runs natively on Windows 10 or later, on any build, in cmd or PowerShell.
 There is no build-number floor: nothing dryer calls is newer than Windows 10,
-which Python itself requires, so a lower build is no longer refused. An OS other
-than Linux, macOS or native Windows is still refused before any work, with
-status 1 and a line naming the ones it delivers on.
+which Python itself requires, so a lower build is no longer refused.
 
 1. Install Python 3.11 or later from python.org and Git for Windows.
 2. Clone crapper and dryer side by side:

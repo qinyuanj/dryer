@@ -13,9 +13,6 @@ import tempfile
 import time
 from pathlib import Path
 
-# There is deliberately no Windows build-number floor: nothing here is newer
-# than Windows 10, which Python itself requires, so any build runs.
-
 # ERROR_ACCESS_DENIED and ERROR_SHARING_VIOLATION: another process (an editor,
 # a viewer, antivirus) holds the snapshot open without FILE_SHARE_DELETE.
 _TRANSIENT_WINERRORS = {5, 32}
