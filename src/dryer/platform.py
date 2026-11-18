@@ -13,8 +13,10 @@ import tempfile
 import time
 from pathlib import Path
 
-# Windows 10 22H2. Windows 11 builds start at 22000.
-MIN_WINDOWS_BUILD = 19045
+# The sys.platform values dryer delivers on. There is deliberately no Windows
+# build-number floor: nothing here is newer than Windows 10, which Python itself
+# requires, so any build runs.
+_DELIVERED = {"linux", "darwin", "win32"}
 
 # ERROR_ACCESS_DENIED and ERROR_SHARING_VIOLATION: another process (an editor,
 # a viewer, antivirus) holds the snapshot open without FILE_SHARE_DELETE.
@@ -24,19 +26,12 @@ _FIRST_DELAY = 0.05
 _MAX_DELAY = 1.0
 
 
-def windows_build() -> int:
-    return sys.getwindowsversion().build
+def platform_refusal(platform: str) -> str | None:
+    """Another OS is refused before any work; every delivered OS runs, on any Windows build."""
 
-
-def platform_refusal(platform: str, build: int | None) -> str | None:
-    """Native Windows runs from Windows 10 22H2 on; older builds are refused."""
-
-    if platform != "win32" or build >= MIN_WINDOWS_BUILD:
+    if platform in _DELIVERED:
         return None
-    return (
-        f"dryer needs Windows 10 22H2 (build {MIN_WINDOWS_BUILD}) or later; this is build {build}. "
-        "Update Windows, or run dryer inside WSL2; see the README."
-    )
+    return f"dryer runs on Linux, macOS and native Windows; this is {platform}. See the README."
 
 
 def platform_warning(platform: str, root: Path) -> str | None:
