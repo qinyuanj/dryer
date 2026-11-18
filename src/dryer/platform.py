@@ -13,10 +13,8 @@ import tempfile
 import time
 from pathlib import Path
 
-# The sys.platform values dryer delivers on. There is deliberately no Windows
-# build-number floor: nothing here is newer than Windows 10, which Python itself
-# requires, so any build runs.
-_DELIVERED = {"linux", "darwin", "win32"}
+# There is deliberately no Windows build-number floor: nothing here is newer
+# than Windows 10, which Python itself requires, so any build runs.
 
 # ERROR_ACCESS_DENIED and ERROR_SHARING_VIOLATION: another process (an editor,
 # a viewer, antivirus) holds the snapshot open without FILE_SHARE_DELETE.
@@ -24,14 +22,6 @@ _TRANSIENT_WINERRORS = {5, 32}
 REPLACE_ATTEMPTS = 8
 _FIRST_DELAY = 0.05
 _MAX_DELAY = 1.0
-
-
-def platform_refusal(platform: str) -> str | None:
-    """Another OS is refused before any work; every delivered OS runs, on any Windows build."""
-
-    if platform in _DELIVERED:
-        return None
-    return f"dryer runs on Linux, macOS and native Windows; this is {platform}. See the README."
 
 
 def platform_warning(platform: str, root: Path) -> str | None:

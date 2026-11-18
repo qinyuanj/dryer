@@ -6,20 +6,7 @@ from pathlib import Path
 import pytest
 
 from dryer import platform
-from dryer.platform import platform_refusal, platform_warning, publish, read_source
-
-
-# Declared platform fixtures: every host dryer delivers on runs, whatever its build.
-@pytest.mark.parametrize("host", ["linux", "darwin", "win32"])
-def test_delivered_hosts_run(host):
-    assert platform_refusal(host) is None
-
-
-@pytest.mark.parametrize("host", ["aix", "freebsd", "sunos5"])
-def test_another_os_is_refused_naming_the_delivered_ones(host):
-    assert platform_refusal(host) == (
-        f"dryer runs on Linux, macOS and native Windows; this is {host}. See the README."
-    )
+from dryer.platform import platform_warning, publish, read_source
 
 
 def test_the_cli_runs_on_this_windows_build(tmp_path, monkeypatch, capsys):
@@ -32,15 +19,6 @@ def test_the_cli_runs_on_this_windows_build(tmp_path, monkeypatch, capsys):
     captured = capsys.readouterr()
     assert captured.out == "No source files to analyze.\n"
     assert captured.err == ""
-
-
-def test_the_cli_refuses_another_os_before_scanning(tmp_path, monkeypatch, capsys):
-    from dryer.cli import run
-
-    monkeypatch.setattr("dryer.cli.sys.platform", "aix")
-    assert run(["--root", str(tmp_path)]) == 1
-    assert "Linux" in capsys.readouterr().err
-    assert not (tmp_path / ".metrics").exists()
 
 
 def test_windows_drive_under_wsl_suggests_the_linux_filesystem():
