@@ -8,7 +8,7 @@ from pathlib import Path
 
 from dryer.crapper_link import ensure_crapper
 from dryer.discover import is_source_file, iter_source_files, language_of
-from dryer.platform import lf_stdout, platform_refusal, platform_warning, windows_build
+from dryer.platform import lf_stdout, platform_warning
 from dryer.report import format_text, render_edn, write_metrics
 from dryer.scan import find_duplicates, scan_files
 
@@ -288,10 +288,6 @@ def run(argv: list[str] | None = None) -> int:
         print(options.message, file=sys.stderr, end="")
         return options.exit_code
 
-    refusal = platform_refusal(sys.platform, windows_build() if sys.platform == "win32" else None)
-    if refusal:
-        print(refusal, file=sys.stderr)
-        return 1
     root = options.project_root.resolve()
     warning = platform_warning(sys.platform, root)
     if warning:
