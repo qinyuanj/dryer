@@ -45,11 +45,13 @@ What stays is the call or method name, the operator, and the shape of the tree. 
 
 ## Run
 
-```bash
-./dryer
+Set up as in [Windows](#windows), then, from a project root:
+
+```bat
+dryer\.venv\Scripts\dryer
 ```
 
-The first run creates `.venv` and installs the tool. crapper has to be checked out next to this directory (`../crapper`), because file selection and function names come from it. From a project root the tool walks the tree, skips `test`, `spec`, `vendor`, `node_modules`, and `target`, and writes two results:
+The POSIX `./dryer` wrapper and `scripts/setup-ubuntu.sh` stay in the tree as the Linux path: unreachable from this host, kept as the entry point a restored Linux host would use, and not a supported way to start dryer. crapper has to be checked out next to this directory (`..\crapper`), because file selection and function names come from it. From a project root the tool walks the tree, skips `test`, `spec`, `vendor`, `node_modules`, and `target`, and writes two results:
 
 - a report on stdout, closest match first
 - `.metrics/dry.edn`, replaced on every successful analysis
@@ -153,44 +155,23 @@ which Python itself requires, so a lower build is no longer refused.
    dryer\.venv\Scripts\dryer
    ```
 
-The first run downloads the tree-sitter grammars, as on Linux.
+The first run downloads the tree-sitter grammars; later runs reuse them.
 
-`.metrics/dry.edn` is byte-identical to the one Linux writes for the same
-project: locations are `/` paths relative to the project root, files with CRLF
-line endings are read as if they had LF, so they report the same forms and
-line numbers, and the snapshot and `--edn` output are written with LF.
-`--exclude` takes `/` or `\`. If another program has the snapshot open,
-dryer retries the replace briefly, so readers still never see a partial file.
-
-## WSL2
-
-dryer also runs inside WSL2 with Ubuntu.
-
-1. In an administrator PowerShell, run `wsl --install` and reboot.
-2. Open Ubuntu and clone into the Linux home directory, not `/mnt/c`.
-   Windows drives are slow under WSL2 and break symlinks:
-
-   ```bash
-   cd ~
-   git clone https://github.com/TLOBillyQ/crapper.git
-   git clone https://github.com/TLOBillyQ/dryer.git
-   ```
-
-3. Run `dryer/scripts/setup-ubuntu.sh`. It installs Python, Lua 5.4,
-   busted, luacov, and luacov-reporter-lcov, then creates `.venv`.
-4. Edit in VS Code with the WSL extension (`code .` from Ubuntu).
-
-dryer warns when a WSL project is under `/mnt/`.
+`.metrics/dry.edn` is written with LF bytes and `/` paths relative to the
+project root whatever the sources look like: a file with CRLF line endings is
+read as if it had LF, so it reports the same forms and line numbers as its LF
+twin. `tests/fixtures/lua_project.dry.edn` is the golden snapshot, and the
+suite compares it byte for byte with runs over an LF copy and a CRLF copy of
+the fixture project. `--exclude` takes `/` or `\`. If another program has
+the snapshot open, dryer retries the replace briefly, so readers still never
+see a partial file.
 
 ## Development
 
-```bash
-python3 -m venv .venv
-.venv/bin/pip install -e '.[dev]'
-.venv/bin/pytest
+```bat
+py -m venv .venv
+.venv\Scripts\python -m pip install -e ".[dev]"
+.venv\Scripts\python -m pytest
 ```
 
-On Windows, use `.venv\Scripts\python -m pytest`. The same golden snapshot
-(`tests/fixtures/lua_project.dry.edn`) must pass on both hosts.
-
-The tests import crapper from `../crapper`, the same as a run.
+The tests import crapper from `..\crapper`, the same as a run.

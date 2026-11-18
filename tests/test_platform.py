@@ -26,6 +26,8 @@ def test_the_cli_runs_when_the_host_is_windows(tmp_path, monkeypatch, capsys):
     assert captured.err == ""
 
 
+# The WSL2 warning is unreachable from the supported host; the two tests below
+# pin the path a restored Linux host would take (ADR 0002 in home-uml-viewer).
 def test_windows_drive_under_wsl_suggests_the_linux_filesystem():
     assert "under ~/" in platform_warning("linux", Path("/mnt/c/proj"))
 
