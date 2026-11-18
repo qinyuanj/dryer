@@ -9,8 +9,13 @@ from dryer import platform
 from dryer.platform import platform_warning, publish, read_source
 
 
-def test_the_cli_runs_on_this_windows_build(tmp_path, monkeypatch, capsys):
-    """Any Windows build runs: this host is below 19045 and must not be refused."""
+def test_the_cli_runs_when_the_host_is_windows(tmp_path, monkeypatch, capsys):
+    """A Windows host runs, whatever its build: no build number is read at all.
+
+    The body forces `sys.platform`, which is the decision the CLI makes, and
+    touches no build, so this says the same thing on a Windows 11 host as on a
+    Windows 10 one. It is not a statement about the machine running it.
+    """
 
     from dryer.cli import run
 
