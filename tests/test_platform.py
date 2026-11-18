@@ -6,55 +6,41 @@ from pathlib import Path
 import pytest
 
 from dryer import platform
-from dryer.platform import MIN_WINDOWS_BUILD, platform_refusal, platform_warning, publish, read_source
+from dryer.platform import platform_refusal, platform_warning, publish, read_source
 
 
-# Declared platform/version fixtures: each row is a host dryer may run on.
-@pytest.mark.parametrize(
-    ("host", "build"),
-    [
-        ("linux", None),
-        ("win32", 19045),  # Windows 10 22H2
-        ("win32", 22000),  # Windows 11 21H2
-        ("win32", 26220),  # Windows 11 (the acceptance host)
-    ],
-)
-def test_supported_hosts_run(host, build):
-    assert platform_refusal(host, build) is None
+# Declared platform fixtures: every host dryer delivers on runs, whatever its build.
+@pytest.mark.parametrize("host", ["linux", "darwin", "win32"])
+def test_delivered_hosts_run(host):
+    assert platform_refusal(host) is None
 
 
-@pytest.mark.parametrize("build", [10240, 17763, 19041, 19044])
-def test_older_windows_is_refused_naming_the_minimum_build(build):
-    message = platform_refusal("win32", build)
-    assert message == (
-        f"dryer needs Windows 10 22H2 (build 19045) or later; this is build {build}. "
-        "Update Windows, or run dryer inside WSL2; see the README."
+@pytest.mark.parametrize("host", ["aix", "freebsd", "sunos5"])
+def test_another_os_is_refused_naming_the_delivered_ones(host):
+    assert platform_refusal(host) == (
+        f"dryer runs on Linux, macOS and native Windows; this is {host}. See the README."
     )
 
 
-def test_the_minimum_build_is_windows_10_22h2():
-    assert MIN_WINDOWS_BUILD == 19045
+def test_the_cli_runs_on_this_windows_build(tmp_path, monkeypatch, capsys):
+    """Any Windows build runs: this host is below 19045 and must not be refused."""
 
-
-def test_the_cli_refuses_an_old_windows_build_before_scanning(tmp_path, monkeypatch, capsys):
     from dryer.cli import run
 
     monkeypatch.setattr("dryer.cli.sys.platform", "win32")
-    monkeypatch.setattr("dryer.cli.windows_build", lambda: 19044)
-    assert run(["--root", str(tmp_path)]) == 1
-    assert "build 19045" in capsys.readouterr().err
-    assert not (tmp_path / ".metrics").exists()
-
-
-def test_the_cli_runs_on_a_supported_windows_build(tmp_path, monkeypatch, capsys):
-    from dryer.cli import run
-
-    monkeypatch.setattr("dryer.cli.sys.platform", "win32")
-    monkeypatch.setattr("dryer.cli.windows_build", lambda: 19045)
     assert run(["--root", str(tmp_path)]) == 0
     captured = capsys.readouterr()
     assert captured.out == "No source files to analyze.\n"
     assert captured.err == ""
+
+
+def test_the_cli_refuses_another_os_before_scanning(tmp_path, monkeypatch, capsys):
+    from dryer.cli import run
+
+    monkeypatch.setattr("dryer.cli.sys.platform", "aix")
+    assert run(["--root", str(tmp_path)]) == 1
+    assert "Linux" in capsys.readouterr().err
+    assert not (tmp_path / ".metrics").exists()
 
 
 def test_windows_drive_under_wsl_suggests_the_linux_filesystem():
