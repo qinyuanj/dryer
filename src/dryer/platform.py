@@ -1,8 +1,10 @@
-"""Everything that differs between Linux and native Windows.
+"""Everything the host decides: how sources are read, and how the snapshot is swapped in.
 
-Scanning and normalization stay host-agnostic: sources are read with universal
-newlines, so a CRLF file normalizes like its LF twin, and the snapshot is
-written as LF bytes, so `.metrics/dry.edn` is byte-identical on every host.
+dryer runs on native Windows x64, and only there (ADR 0002 in home-uml-viewer). Scanning and
+normalization stay host-agnostic: sources are read with universal newlines, so
+a CRLF file normalizes like its LF twin, and the snapshot is written as LF
+bytes, so `.metrics/dry.edn` holds the same bytes whatever line endings the
+sources use.
 """
 
 from __future__ import annotations
@@ -22,7 +24,12 @@ _MAX_DELAY = 1.0
 
 
 def platform_warning(platform: str, root: Path) -> str | None:
-    """Under WSL2, a project on a Windows drive is slow and loses symlinks."""
+    """Under WSL2, a project on a Windows drive is slow and loses symlinks.
+
+    Unreachable from the supported host, where `platform` is always `"win32"`.
+    It stays with the rest of the Linux path: it is what a restored Linux host
+    would need, and deleting it is a separate decision (ADR 0002 in home-uml-viewer).
+    """
 
     if platform != "win32" and root.as_posix().startswith("/mnt/"):
         return (
@@ -33,7 +40,7 @@ def platform_warning(platform: str, root: Path) -> str | None:
 
 
 def lf_stdout() -> None:
-    """Windows stdout writes CRLF by default; the EDN report must be the same bytes everywhere."""
+    """Windows stdout writes CRLF by default; the EDN report is written with LF."""
 
     reconfigure = getattr(sys.stdout, "reconfigure", None)
     if reconfigure is not None:

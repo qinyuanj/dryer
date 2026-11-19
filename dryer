@@ -1,5 +1,9 @@
 #!/bin/sh
 # Run the duplication finder, creating a local virtualenv on first use.
+#
+# POSIX only: dryer's supported host is native Windows x64 (ADR 0002 in
+# home-uml-viewer). Kept
+# with scripts/setup-ubuntu.sh as the Linux path, unreachable but not deleted.
 ROOT=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
 PY="$ROOT/.venv/bin/python"
 if [ ! -x "$PY" ]; then

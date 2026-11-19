@@ -1,4 +1,4 @@
-# Snapshots and fixtures are compared byte for byte on Linux and Windows.
+# Snapshots and fixtures are compared byte for byte.
 # Check them out with LF whatever core.autocrlf says; tests make CRLF copies.
 tests/fixtures/** text eol=lf
 *.edn text eol=lf
